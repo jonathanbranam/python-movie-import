@@ -37,7 +37,8 @@ with open('../downloads/ml-20m/movies.csv') as movieFile:
             movieList = []
         # print(movie_data)
     if len(movieList) > 0:
-        print('Inserting {0} movies...'.format(len(movieList)))
+        print('Inserting {0} ({1}) movies...'
+              .format(len(movieList), count))
         movies.insert_many(movieList)
 
 print('Imported {0} total movies...'.format(count))
@@ -67,11 +68,12 @@ with open('../downloads/ml-20m/links.csv') as linkFile:
             print('Updating {0} ({1} / {2}) movies...'
                   .format(len(updateList), update_count, count))
             # print(updateList)
-            movies.bulk_write(updateList)
+            movies.bulk_write(updateList, ordered=False)
             updateList = []
     if len(updateList) > 0:
-        print('Updating {0} movies...'.format(len(updateList)))
-        movies.bulk_write(updateList)
+        print('Updating {0} ({1} / {2}) movies...'
+              .format(len(updateList), update_count, count))
+        movies.bulk_write(updateList, ordered=False)
 
 
 print('Updated {0} total movies...'.format(update_count))
