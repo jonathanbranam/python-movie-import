@@ -33,7 +33,8 @@ def importMovies(file_name, db):
                 'ml_id': row['movieId'],
                 'title': row['title'],
                 'ml_title': row['title'],
-                'ml_genres': genres
+                'genres': genres,
+                'ml_genres': genres,
             }
             movieList.append(movie_data)
             count += 1
