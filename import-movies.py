@@ -13,7 +13,7 @@ BULK_INSERT_COUNT = 1000
 BULK_UPDATE_COUNT = 1000
 BULK_CAST_COUNT = 1000
 
-debug = True
+debug = False
 
 if debug:
     ML_MOVIES_FILENAME = '../downloads/test/test-ml-movies.csv'
@@ -229,13 +229,37 @@ def parseTmdbKeywords(tmdb_keywords):
     return keywords
 
 
+def parseFloat(value, default=0):
+    result = default
+    try:
+        result = float(value)
+    except ValueError:
+        result = default
+    return result
+
+
+def parseInt(value, default=0):
+    result = default
+    try:
+        result = int(value)
+    except ValueError:
+        if value.find('.') != -1:
+            try:
+                result = int(float(value))
+            except ValueError:
+                result = default
+        else:
+            result = default
+    return result
+
+
 def importTmdbMovieData(movie, row):
     genres = []
     if movie is not None:
         genres = movie['genres']
     genres, tmdb_genres = parseMergeGenres(genres, row['genres'])
     fields = {
-        'budget': int(row['budget']),
+        'budget': parseInt(row['budget']),
         'genres': genres,
         'tmdbGenres': tmdb_genres,
         'homepage': row['homepage'],
@@ -243,18 +267,18 @@ def importTmdbMovieData(movie, row):
         'originalLanguage': row['original_language'],
         'originalTitle': row['original_title'],
         'overview': row['overview'],
-        'tmdbPopularity': float(row['popularity']),
+        'tmdbPopularity': parseFloat(row['popularity']),
         'productionCompanies': row['production_companies'],
         'productionCountries': row['production_countries'],
         'releaseDate': row['release_date'],
-        'revenue': int(row['revenue']),
-        'runtime': int(row['runtime']),
+        'revenue': parseInt(row['revenue']),
+        'runtime': parseInt(row['runtime']),
         'spokenLanguage': row['spoken_languages'],
         'status': row['status'],
         'tagline': row['tagline'],
         'tmdbTitle': row['title'],
-        'tmdbVoteAverage': float(row['vote_average']),
-        'tmdbVoteCount': int(row['vote_count'])
+        'tmdbVoteAverage': parseFloat(row['vote_average']),
+        'tmdbVoteCount': parseInt(row['vote_count'])
     }
     if movie is None:
         fields['tmdbId'] = row['id']
