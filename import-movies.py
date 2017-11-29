@@ -13,8 +13,25 @@ BULK_INSERT_COUNT = 1000
 BULK_UPDATE_COUNT = 1000
 BULK_CAST_COUNT = 1000
 
+debug = True
 
-def importMovies(file_name, db):
+if debug:
+    ML_MOVIES_FILENAME = '../downloads/test/test-ml-movies.csv'
+    ML_LINKS_FILENAME = '../downloads/test/test-ml-links.csv'
+    TMDB_MOVIES_FILENAME = \
+        '../downloads/test/test-tmdb-movies.csv'
+    TMDB_CREDITS_FILENAME = \
+        '../downloads/test/test-tmdb-credits.csv'
+else:
+    ML_MOVIES_FILENAME = '../downloads/ml-20m/movies.csv'
+    ML_LINKS_FILENAME = '../downloads/ml-20m/links.csv'
+    TMDB_MOVIES_FILENAME = \
+        '../downloads/tmdb-5000-movie-dataset/tmdb_5000_movies.csv'
+    TMDB_CREDITS_FILENAME = \
+        '../downloads/tmdb-5000-movie-dataset/tmdb_5000_credits.csv'
+
+
+def importMovieLensMovies(file_name, db):
     db.drop_collection('movies')
     movies = db.movies
     start = time.perf_counter()
@@ -140,7 +157,7 @@ def importCastCrew(file_name, db):
     print("Couldn't find {0} movies...".format(missing_movies))
 
 
-def updateMovieLinks(file_name, db, count):
+def updateMovieLensLinks(file_name, db, count):
     movies = db.movies
     update_count = 0
     start = time.perf_counter()
@@ -194,19 +211,131 @@ def updateMovieLinks(file_name, db, count):
           update_end-start))
 
 
+def parseMergeGenres(genres, tmdb_genres):
+    tmdb_data = json.loads(tmdb_genres)
+    tmdb_set = set()
+    for genre in tmdb_data:
+        tmdb_set.add(genre['name'])
+    orig_set = set(genres)
+    genres = list(orig_set | tmdb_set)
+    return genres, list(tmdb_set)
+
+
+def parseTmdbKeywords(tmdb_keywords):
+    tmdb_data = json.loads(tmdb_keywords)
+    keywords = []
+    for kw in tmdb_data:
+        keywords.append(kw['name'])
+    return keywords
+
+
+def importTmdbMovieData(movie, row):
+    genres = []
+    if movie is not None:
+        genres = movie['genres']
+    genres, tmdb_genres = parseMergeGenres(genres, row['genres'])
+    fields = {
+        'budget': int(row['budget']),
+        'genres': genres,
+        'tmdbGenres': tmdb_genres,
+        'homepage': row['homepage'],
+        'keywords': parseTmdbKeywords(row['keywords']),
+        'originalLanguage': row['original_language'],
+        'originalTitle': row['original_title'],
+        'overview': row['overview'],
+        'tmdbPopularity': float(row['popularity']),
+        'productionCompanies': row['production_companies'],
+        'productionCountries': row['production_countries'],
+        'releaseDate': row['release_date'],
+        'revenue': int(row['revenue']),
+        'runtime': int(row['runtime']),
+        'spokenLanguage': row['spoken_languages'],
+        'status': row['status'],
+        'tagline': row['tagline'],
+        'tmdbTitle': row['title'],
+        'tmdbVoteAverage': float(row['vote_average']),
+        'tmdbVoteCount': int(row['vote_count'])
+    }
+    if movie is None:
+        fields['tmdbId'] = row['id']
+        fields['title'] = fields['tmdbTitle']
+        return InsertOne(fields)
+    else:
+        return UpdateOne(
+            {'_id': movie['_id']},
+            {'$set': fields}
+        )
+
+
+def importTmdbMovies(file_name, db, count):
+    movies = db.movies
+    update_count = 0
+    new_movie_count = 0
+    start = time.perf_counter()
+    with open(file_name) as linkFile:
+        linkReader = csv.DictReader(linkFile)
+        updateList = []
+        for row in linkReader:
+            movie = movies.find_one({'tmdbId': row['id']})
+            # columns: budget,genres,homepage,id,keywords,original_language,
+            # original_title,overview,popularity,production_companies,
+            # production_countries,release_date,revenue,runtime,
+            # spoken_languages,status,tagline,title,vote_average,vote_count
+            update = importTmdbMovieData(movie, row)
+            updateList.append(update)
+            if movie is not None:
+                update_count += 1
+            else:
+                new_movie_count += 1
+
+            if len(updateList) >= BULK_UPDATE_COUNT:
+                # print(updateList)
+                movies.bulk_write(updateList, ordered=False)
+                cur_time = time.perf_counter()
+                time_remaining = (cur_time-start) / update_count \
+                    * (count-update_count)
+                print(('Updated {0} ({1} / {2} in {3:.2f} secs) movies...'
+                      ' {4:.0f} secs remaining')
+                      .format(len(updateList), update_count, count,
+                              cur_time-start, time_remaining))
+                updateList = []
+        if len(updateList) > 0:
+            movies.bulk_write(updateList, ordered=False)
+            cur_time = time.perf_counter()
+            print('Updated {0} ({1} / {2} in {3:.2f} secs) movies...'
+                  .format(len(updateList), update_count, count,
+                          cur_time-start))
+
+    update_end = time.perf_counter()
+    print('Updated {0} total movies in {1:.0f} secs...'.format(update_count,
+          update_end-start))
+    print('{0} movies in TMDB database not found.'.format(new_movie_count))
+
+
+# ML_MOVIES_FILENAME
+# ML_LINKS_FILENAME
+# TMDB_MOVIES_FILENAME
+# TMDB_CREDITS_FILENAME
 start = time.perf_counter()
-count = importMovies('../downloads/ml-20m/movies.csv', db)
+count = importMovieLensMovies(ML_MOVIES_FILENAME, db)
 import_end = time.perf_counter()
 
 link_start = time.perf_counter()
-updateMovieLinks('../downloads/ml-20m/links.csv', db, count)
+print('Updating Movie Lens links to TMDB and IMDB...')
+updateMovieLensLinks(ML_LINKS_FILENAME, db, count)
 link_end = time.perf_counter()
 link_time = link_end-link_start
 
-cast_start = time.perf_counter()
-importCastCrew('../downloads/tmdb-5000-movie-dataset/tmdb_5000_credits.csv',
-               db)
-cast_end = time.perf_counter()
+link_start = time.perf_counter()
+print('Importing TMDB Movie data...')
+importTmdbMovies(TMDB_MOVIES_FILENAME, db, count)
+link_end = time.perf_counter()
+link_time = link_end-link_start
+
+# cast_start = time.perf_counter()
+# print('Importing TMDB Cast data...')
+# importCastCrew(TMDB_CREDITS_FILENAME, db)
+# cast_end = time.perf_counter()
 
 
 end = time.perf_counter()
