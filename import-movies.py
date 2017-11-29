@@ -1,5 +1,5 @@
 import csv
-from pymongo import InsertOne, UpdateOne, MongoClient
+from pymongo import InsertOne, UpdateMany, UpdateOne, MongoClient
 import time
 import json
 
@@ -13,6 +13,7 @@ BULK_INSERT_COUNT = 1000
 BULK_UPDATE_COUNT = 1000
 BULK_CAST_COUNT = 1000
 
+MAX_IMPORT = 90000000
 debug = False
 
 if debug:
@@ -64,6 +65,8 @@ def importMovieLensMovies(file_name, db):
                       .format(len(movieList), count, cur_time-start))
                 movieList = []
             # print(movie_data)
+            if count > MAX_IMPORT:
+                break
         if len(movieList) > 0:
             movies.insert_many(movieList)
             cur_time = time.perf_counter()
@@ -119,6 +122,8 @@ def mergeCastMovies(db):
     update_count = 0
     count = 106257
     start = time.perf_counter()
+    movies.bulk_write([UpdateMany({}, {'$set': {'hasCastData': False}})])
+
     for member in people.find():
         for role in member['roles']:
             movie = movies.find_one({'_id': role['movieId']})
@@ -133,7 +138,10 @@ def mergeCastMovies(db):
                             'order': role['order'],
                             'character': role['character'],
                         }
-                    }}
+                    }, '$set': {
+                        'hasCastData': True
+                        }
+                    }
                 ))
             if len(updateList) >= BULK_UPDATE_COUNT:
                 # print(updateList)
@@ -195,6 +203,8 @@ def importCastCrew(file_name, db):
                       .format(len(castList), cast_count,
                               cur_time-start))
                 castList = []
+            if cast_count > MAX_IMPORT:
+                break
         if len(castList) > 0:
             # print(castList)
             people.bulk_write(castList, ordered=False)
@@ -241,6 +251,8 @@ def updateMovieLensLinks(file_name, db, count):
                       .format(len(updateList), update_count, count,
                               cur_time-start, time_remaining))
                 updateList = []
+            if update_count > MAX_IMPORT:
+                break
         if len(updateList) > 0:
             movies.bulk_write(updateList, ordered=False)
             cur_time = time.perf_counter()
@@ -333,6 +345,8 @@ def importTmdbMovieData(movie, row):
     if movie is None:
         fields['tmdbId'] = row['id']
         fields['title'] = fields['tmdbTitle']
+        fields['cast'] = []
+        fields['crew'] = []
         return InsertOne(fields)
     else:
         return UpdateOne(
@@ -373,6 +387,8 @@ def importTmdbMovies(file_name, db, count):
                       .format(len(updateList), update_count, count,
                               cur_time-start, time_remaining))
                 updateList = []
+            if update_count > MAX_IMPORT:
+                break
         if len(updateList) > 0:
             movies.bulk_write(updateList, ordered=False)
             cur_time = time.perf_counter()
