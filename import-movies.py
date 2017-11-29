@@ -84,8 +84,8 @@ def importMovieLensMovies(file_name, db):
     return count
 
 
-def castCreateOrUpdate(member, movie, cast):
-    lookup = cast.find_one({'tmdbId': member['id']})
+def castCreateOrUpdate(member, movie, people):
+    lookup = people.find_one({'tmdbId': member['id']})
     if lookup is None:
         return InsertOne({
             'tmdbId': member['id'],
@@ -114,12 +114,12 @@ def castCreateOrUpdate(member, movie, cast):
 
 def mergeCastMovies(db):
     movies = db.movies
-    cast = db.cast
+    people = db.people
     updateList = []
     update_count = 0
     count = 106257
     start = time.perf_counter()
-    for member in cast.find():
+    for member in people.find():
         for role in member['roles']:
             movie = movies.find_one({'_id': role['movieId']})
             if movie is not None:
@@ -128,7 +128,7 @@ def mergeCastMovies(db):
                     {'_id': movie['_id']},
                     {'$push': {
                         'cast': {
-                            'castId': member['_id'],
+                            'personId': member['_id'],
                             'name': member['name'],
                             'order': role['order'],
                             'character': role['character'],
@@ -157,12 +157,12 @@ def mergeCastMovies(db):
 
 
 def importCastCrew(file_name, db):
-    db.drop_collection('cast')
+    db.drop_collection('people')
     movies = db.movies
-    cast = db.cast
-    cast.create_index('tmdbId')
-    cast.create_index('name')
-    cast.create_index('roles.movieId')
+    people = db.people
+    people.create_index('tmdbId')
+    people.create_index('name')
+    people.create_index('roles.movieId')
     cast_count = 0
     missing_movies = 0
     start = time.perf_counter()
@@ -184,12 +184,12 @@ def importCastCrew(file_name, db):
                     # ['cast_id', 'character', 'credit_id', 'gender', 'id',
                     #  'name', 'order']
                     cast_count += 1
-                    op = castCreateOrUpdate(member, movie, cast)
+                    op = castCreateOrUpdate(member, movie, people)
                     castList.append(op)
             # seems we need to insert after every movie to avoid duplicates
             if len(castList) > 0:
                 # print(castList)
-                cast.bulk_write(castList, ordered=False)
+                people.bulk_write(castList, ordered=False)
                 cur_time = time.perf_counter()
                 print('Updated {0} ({1} in {2:.2f} secs) movies...'
                       .format(len(castList), cast_count,
@@ -197,7 +197,7 @@ def importCastCrew(file_name, db):
                 castList = []
         if len(castList) > 0:
             # print(castList)
-            cast.bulk_write(castList, ordered=False)
+            people.bulk_write(castList, ordered=False)
             cur_time = time.perf_counter()
             print('Updated {0} ({1} in {2:.2f} secs) movies...'
                   .format(len(castList), cast_count,
