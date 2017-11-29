@@ -52,6 +52,8 @@ def importMovieLensMovies(file_name, db):
                 'mlTitle': row['title'],
                 'genres': genres,
                 'mlGenres': genres,
+                'cast': [],
+                'crew': []
             }
             movieList.append(movie_data)
             count += 1
@@ -67,6 +69,7 @@ def importMovieLensMovies(file_name, db):
             cur_time = time.perf_counter()
             print('Inserted {0} ({1} in {2:.2f} secs) movies...'
                   .format(len(movieList), count, cur_time-start))
+            movieList = []
 
     index_start = time.perf_counter()
     print('Indexing {0} movies...'.format(count))
@@ -90,6 +93,7 @@ def castCreateOrUpdate(member, movie, cast):
             'gender': member['gender'],
             'roles': [{
                 'movieId': movie['_id'],
+                'title': movie['title'],
                 'order': member['order'],
                 'character': member['character'],
             }]
@@ -100,11 +104,56 @@ def castCreateOrUpdate(member, movie, cast):
             {'$push': {
                 'roles': {
                     'movieId': movie['_id'],
+                    'title': movie['title'],
                     'order': member['order'],
                     'character': member['character'],
                 }
             }}
         )
+
+
+def mergeCastMovies(db):
+    movies = db.movies
+    cast = db.cast
+    updateList = []
+    update_count = 0
+    count = 106257
+    start = time.perf_counter()
+    for member in cast.find():
+        for role in member['roles']:
+            movie = movies.find_one({'_id': role['movieId']})
+            if movie is not None:
+                update_count += 1
+                updateList.append(UpdateOne(
+                    {'_id': movie['_id']},
+                    {'$push': {
+                        'cast': {
+                            'castId': member['_id'],
+                            'name': member['name'],
+                            'order': role['order'],
+                            'character': role['character'],
+                        }
+                    }}
+                ))
+            if len(updateList) >= BULK_UPDATE_COUNT:
+                # print(updateList)
+                movies.bulk_write(updateList, ordered=False)
+                cur_time = time.perf_counter()
+                time_remaining = (cur_time-start) / update_count \
+                    * (count-update_count)
+                print(('Updated {0} ({1} / {2} in {3:.2f} secs) movies...'
+                      ' {4:.0f} secs remaining')
+                      .format(len(updateList), update_count, count,
+                              cur_time-start, time_remaining))
+                updateList = []
+    if len(updateList) > 0:
+        # print(updateList)
+        movies.bulk_write(updateList, ordered=False)
+        cur_time = time.perf_counter()
+        print('Updated {0} ({1} / {2} in {3:.2f} secs) movies...'
+              .format(len(updateList), update_count, count,
+                      cur_time-start))
+        updateList = []
 
 
 def importCastCrew(file_name, db):
@@ -198,6 +247,7 @@ def updateMovieLensLinks(file_name, db, count):
             print('Updated {0} ({1} / {2} in {3:.2f} secs) movies...'
                   .format(len(updateList), update_count, count,
                           cur_time-start))
+            updateList = []
 
     index_start = time.perf_counter()
     print('Indexing {0} movies...'.format(count))
@@ -329,6 +379,7 @@ def importTmdbMovies(file_name, db, count):
             print('Updated {0} ({1} / {2} in {3:.2f} secs) movies...'
                   .format(len(updateList), update_count, count,
                           cur_time-start))
+            updateList = []
 
     update_end = time.perf_counter()
     print('Updated {0} total movies in {1:.0f} secs...'.format(update_count,
@@ -356,10 +407,15 @@ importTmdbMovies(TMDB_MOVIES_FILENAME, db, count)
 link_end = time.perf_counter()
 link_time = link_end-link_start
 
-# cast_start = time.perf_counter()
-# print('Importing TMDB Cast data...')
-# importCastCrew(TMDB_CREDITS_FILENAME, db)
-# cast_end = time.perf_counter()
+cast_start = time.perf_counter()
+print('Importing TMDB Cast data...')
+importCastCrew(TMDB_CREDITS_FILENAME, db)
+cast_end = time.perf_counter()
+
+cast_merge_start = time.perf_counter()
+print('Merge cast data to movies...')
+mergeCastMovies(db)
+cast_merge_end = time.perf_counter()
 
 
 end = time.perf_counter()
