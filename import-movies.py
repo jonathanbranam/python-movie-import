@@ -30,11 +30,11 @@ def importMovies(file_name, db):
                 genres = row['genres'].split('|')
 
             movie_data = {
-                'ml_id': row['movieId'],
+                'mlId': row['movieId'],
                 'title': row['title'],
-                'ml_title': row['title'],
+                'mlTitle': row['title'],
                 'genres': genres,
-                'ml_genres': genres,
+                'mlGenres': genres,
             }
             movieList.append(movie_data)
             count += 1
@@ -53,7 +53,7 @@ def importMovies(file_name, db):
 
     index_start = time.perf_counter()
     print('Indexing {0} movies...'.format(count))
-    movies.create_index('ml_id')
+    movies.create_index('mlId')
     movies.create_index('title')
     index_end = time.perf_counter()
     print('Indexed {0} movies in {1:0.2f} secs'.format(count,
@@ -65,14 +65,14 @@ def importMovies(file_name, db):
 
 
 def castCreateOrUpdate(member, movie, cast):
-    lookup = cast.find_one({'tmdb_id': member['id']})
+    lookup = cast.find_one({'tmdbId': member['id']})
     if lookup is None:
         return InsertOne({
-            'tmdb_id': member['id'],
+            'tmdbId': member['id'],
             'name': member['name'],
             'gender': member['gender'],
             'roles': [{
-                'movie_id': movie['_id'],
+                'movieId': movie['_id'],
                 'order': member['order'],
                 'character': member['character'],
             }]
@@ -82,7 +82,7 @@ def castCreateOrUpdate(member, movie, cast):
             {'_id': lookup['_id']},
             {'$push': {
                 'roles': {
-                    'movie_id': movie['_id'],
+                    'movieId': movie['_id'],
                     'order': member['order'],
                     'character': member['character'],
                 }
@@ -94,9 +94,9 @@ def importCastCrew(file_name, db):
     db.drop_collection('cast')
     movies = db.movies
     cast = db.cast
-    cast.create_index('tmdb_id')
+    cast.create_index('tmdbId')
     cast.create_index('name')
-    cast.create_index('roles.movie_id')
+    cast.create_index('roles.movieId')
     cast_count = 0
     missing_movies = 0
     start = time.perf_counter()
@@ -105,7 +105,7 @@ def importCastCrew(file_name, db):
         # columns: movie_id,title,cast,crew
         castList = []
         for row in castReader:
-            movie = movies.find_one({'tmdb_id': row['movie_id']})
+            movie = movies.find_one({'tmdbId': row['movie_id']})
             if movie is None:
                 missing_movies += 1
                 # print("Couldn't find movie {0} with id {1}."
@@ -149,7 +149,7 @@ def updateMovieLinks(file_name, db, count):
         # columns: movieId,imdbId,tmdbId
         updateList = []
         for row in linkReader:
-            movie = movies.find_one({'ml_id': row['movieId']})
+            movie = movies.find_one({'mlId': row['movieId']})
             if movie is not None:
                 update_count += 1
                 # Updating each movie once at a time is far too slow
@@ -159,8 +159,8 @@ def updateMovieLinks(file_name, db, count):
                 updateList.append(UpdateOne(
                     {'_id': movie['_id']},
                     {'$set': {
-                        'imdb_id': row['imdbId'],
-                        'tmdb_id': row['tmdbId']
+                        'imdbId': row['imdbId'],
+                        'tmdbId': row['tmdbId']
                     }}
                 ))
 
@@ -184,8 +184,8 @@ def updateMovieLinks(file_name, db, count):
 
     index_start = time.perf_counter()
     print('Indexing {0} movies...'.format(count))
-    movies.create_index('tmdb_id')
-    movies.create_index('imdb_id')
+    movies.create_index('tmdbId')
+    movies.create_index('imdbId')
     index_end = time.perf_counter()
     print('Indexed {0} movies in {1:0.2f} secs'.format(count,
           index_end-index_start))
