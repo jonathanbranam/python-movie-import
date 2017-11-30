@@ -2,6 +2,7 @@ from pymongo import MongoClient
 import time
 import requests
 import codecs
+import os
 
 
 URL = 'http://api.themoviedb.org/3/'
@@ -68,23 +69,31 @@ def fetch(pid, f, base_url, movie_id, tmdb_id):
 
 
 def main(f, cursor, step):
+    count = 0
     for index in range(1, step+1):
         if cursor.alive:
             movie = cursor.next()
             fetch(index, f, BASE_URL, movie['_id'], movie['tmdbId'])
+            count += 1
             index += 1
+    return count
 
 
 client = MongoClient()
 db = client.movie_db
 movies = db.movies
+count_cursor = movies.find({'posterPath': {'$not': {'$exists': True}}})
+total = count_cursor.count()
+count_cursor.close()
 cursor = movies.find({'posterPath': {'$not': {'$exists': True}}})
 
 STEP_SIZE = 20
 loop = 1
-with codecs.open(FILE_CACHE, 'w', "utf-8") as f:
+count = 0
+
+with codecs.open(FILE_CACHE, 'a+', 'utf-8') as f:
     while cursor.alive:
-        print('Loop {} through event loop.'.format(loop))
-        main(f, cursor, STEP_SIZE)
+        print('Loop {}, imported {} / {}'.format(loop, count, total))
+        count += main(f, cursor, STEP_SIZE)
         time.sleep(2)
         loop += 1
