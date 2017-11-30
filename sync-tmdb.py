@@ -2,7 +2,6 @@ from pymongo import MongoClient
 import time
 import requests
 import codecs
-import os
 
 
 URL = 'http://api.themoviedb.org/3/'
@@ -19,6 +18,16 @@ BASE_URL = 'http://image.tmdb.org/t/p/'
 KEY_APPEND = '?api_key=' + API_KEY
 
 FILE_CACHE = 'tmdb-data.txt'
+
+
+def failedTmdbLookup(movie_id):
+    client = MongoClient()
+    db = client.movie_db
+    movies = db.movies
+    movie = movies.find_one({'_id': movie_id})
+    movie['tmdbLookupFailed'] = True
+    movies.save(movie)
+    return movie
 
 
 def updateMovie(data, base_url, movie_id):
@@ -45,7 +54,7 @@ def updateMovie(data, base_url, movie_id):
     return updated
 
 
-def fetch(pid, f, base_url, movie_id, tmdb_id):
+def fetch(pid, f, base_url, movie_id, tmdb_id, title=''):
     start = time.time()
     req_url = URL + MOVIE + tmdb_id + KEY_APPEND
     response = requests.get(req_url)
@@ -55,17 +64,31 @@ def fetch(pid, f, base_url, movie_id, tmdb_id):
         data = response.json()
         f.write(response.text + '\n')
         updated = updateMovie(data, base_url, movie_id)
+        time.sleep(0.3)
     elif response.status_code == 404:
-        print('TMDB API couldn\'t find movie {} ({}).'
-              .format(movie_id, tmdb_id))
+        failedTmdbLookup(movie_id)
+        print('TMDB API couldn\'t find movie {} {} ({}).'
+              .format(title, movie_id, tmdb_id))
     elif response.status_code == 429:
-        print('OVER TIME Returned status {}'.format(response.status_code))
+        print('**** OVER TIME Returned status {} **** '
+              .format(response.status_code))
         time.sleep(4)
     else:
         print('Returned status {}'.format(response.status_code))
     end_time = time.time()
-    print('{} fetched {} in {:0.2f} sec ({})'.
-          format(pid, movie_id, end_time-start, str(updated)))
+    # print('{} fetched {} {} in {:0.2f} sec ({})'.
+    #       format(pid, title, movie_id, end_time-start, str(updated)))
+
+
+def hasValidTmdbId(movie):
+    if movie['tmdbId'] is None:
+        return False
+    elif type(movie['tmdbId']) is not str:
+        return False
+    elif len(movie['tmdbId']) <= 0:
+        return False
+    else:
+        return True
 
 
 def main(f, cursor, step):
@@ -73,19 +96,29 @@ def main(f, cursor, step):
     for index in range(1, step+1):
         if cursor.alive:
             movie = cursor.next()
-            fetch(index, f, BASE_URL, movie['_id'], movie['tmdbId'])
-            count += 1
-            index += 1
+            if hasValidTmdbId(movie):
+                fetch(index, f, BASE_URL, movie['_id'],
+                      movie['tmdbId'], movie['title'])
+                count += 1
+                index += 1
     return count
 
 
 client = MongoClient()
 db = client.movie_db
 movies = db.movies
-count_cursor = movies.find({'posterPath': {'$not': {'$exists': True}}})
+query = {
+    'posterPath': {'$not': {'$exists': True}},
+    'tmdbLookupFailed': {'$not': {'$eq': True}},
+    'tmdbId': {
+        '$exists': True,
+        '$not': {'$eq': ''}
+    }
+}
+count_cursor = movies.find(query)
 total = count_cursor.count()
 count_cursor.close()
-cursor = movies.find({'posterPath': {'$not': {'$exists': True}}})
+cursor = movies.find(query)
 
 STEP_SIZE = 20
 loop = 1
