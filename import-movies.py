@@ -2,6 +2,7 @@ import csv
 from pymongo import InsertOne, UpdateMany, UpdateOne, MongoClient
 import time
 import json
+import re
 
 client = MongoClient()
 # client = MongoClient('localhost', 27017)
@@ -37,6 +38,7 @@ def importMovieLensMovies(file_name, db):
     movies = db.movies
     start = time.perf_counter()
     count = 0
+    titleRe = re.compile('^(.+?)\s*\((\d{4})\)')
     with open(file_name) as movieFile:
         movieReader = csv.DictReader(movieFile)
         # columns: movieId,title,genres
@@ -47,10 +49,17 @@ def importMovieLensMovies(file_name, db):
             if row['genres'] != '(no genres listed)':
                 genres = row['genres'].split('|')
 
+            title = row['title']
+            releaseYear = 0
+            match = titleRe.match(title)
+            if match is not None:
+                title = match[1]
+                releaseYear = int(match[2])
             movie_data = {
                 'mlId': row['movieId'],
-                'title': row['title'],
+                'title': title,
                 'mlTitle': row['title'],
+                'releaseYear': releaseYear,
                 'genres': genres,
                 'mlGenres': genres,
                 'cast': [],
