@@ -3,6 +3,7 @@ from pymongo import InsertOne, UpdateMany, UpdateOne, MongoClient
 import time
 import json
 import re
+import requests
 
 client = MongoClient()
 # client = MongoClient('localhost', 27017)
@@ -14,8 +15,22 @@ BULK_INSERT_COUNT = 1000
 BULK_UPDATE_COUNT = 1000
 BULK_CAST_COUNT = 1000
 
+URL = 'http://api.themoviedb.org/3/'
+CONFIG_URL = 'http://api.themoviedb.org/3/configuration'
+EXAMPLE = ('https://api.themoviedb.org/3/configuration?'
+           'api_key=78ef9d5bb5afba0881ccda78508a961a')
+EXAMPLE2 = ('https://api.themoviedb.org/3/movie/32612'
+            '?api_key=78ef9d5bb5afba0881ccda78508a961a')
+API_KEY = '78ef9d5bb5afba0881ccda78508a961a'
+MOVIE = 'movie/'
+CREDITS = '/credits'
+THUMBNAIL = 'w92'
+LARGE = 'w342'
+IMAGE_URL = 'http://image.tmdb.org/t/p/'
+KEY_APPEND = '?api_key=' + API_KEY
 MAX_IMPORT = 90000000
-debug = False
+
+debug = True
 
 if debug:
     ML_MOVIES_FILENAME = '../downloads/test/test-ml-movies.csv'
@@ -364,6 +379,98 @@ def importTmdbMovieData(movie, row):
         )
 
 
+def hasValidTmdbId(movie):
+    if movie['tmdbId'] is None:
+        return False
+    elif type(movie['tmdbId']) is not str:
+        return False
+    elif len(movie['tmdbId']) <= 0:
+        return False
+    else:
+        return True
+
+
+def updateMovie(db, data, movie):
+    updated = False
+    posterThumbnailHref = ''
+    posterHref = ''
+    if data['poster_path'] is not None:
+        posterThumbnailHref = (IMAGE_URL + THUMBNAIL
+                               + data['poster_path'])
+        posterHref = IMAGE_URL + LARGE + data['poster_path']
+    updated = True
+    movie['posterPath'] = data['poster_path']
+    movie['backdropPath'] = data['backdrop_path']
+    movie['posterThumbnailHref'] = posterThumbnailHref
+    movie['posterHref'] = posterHref
+    db.movies.save(movie)
+    return updated
+
+
+def updateMovieCredits(db, data, movie):
+    for member in data['cast']:
+        # check if person exists
+        # load person
+        print(member)
+
+
+def fetchCredits(db, movie):
+    req_url = URL + MOVIE + movie['tmdbId'] + CREDITS + KEY_APPEND
+    response = requests.get(req_url)
+    updated = False
+    if response.status_code == 200:
+        data = response.json()
+        updated = updateMovieCredits(db, data, movie)
+        time.sleep(0.3)
+    elif response.status_code == 404:
+        print('TMDB API couldn\'t find movie {} {} ({}).'
+              .format(movie['title'], movie['_id'], movie['tmdbId']))
+        time.sleep(0.4)
+    elif response.status_code == 429:
+        print('**** OVER TIME Returned status {} **** '
+              .format(response.status_code))
+        time.sleep(4)
+    else:
+        print('Returned status {}'.format(response.status_code))
+    return updated
+
+
+def fetchMovie(db, movie):
+    req_url = URL + MOVIE + movie['tmdbId'] + KEY_APPEND
+    response = requests.get(req_url)
+    updated = False
+    if response.status_code == 200:
+        data = response.json()
+        updated = updateMovie(db, data, movie)
+        time.sleep(0.3)
+    elif response.status_code == 404:
+        print('TMDB API couldn\'t find movie {} {} ({}).'
+              .format(movie['title'], movie['_id'], movie['tmdbId']))
+        time.sleep(0.4)
+    elif response.status_code == 429:
+        print('**** OVER TIME Returned status {} **** '
+              .format(response.status_code))
+        time.sleep(4)
+    else:
+        print('Returned status {}'.format(response.status_code))
+    return updated
+
+
+def loadTmdbApi(file_name, db, count):
+    movies = db.movies
+    update_count = 0
+
+    start = time.perf_counter()
+    for movie in movies.find():
+        if hasValidTmdbId(movie):
+            fetchMovie(db, movie)
+            fetchCredits(db, movie)
+            update_count += 1
+        if update_count % BULK_INSERT_COUNT == 0:
+            print('Updated {}'.format(update_count))
+    end = time.perf_counter()
+
+
 def importTmdbMovies(file_name, db, count):
     movies = db.movies
     update_count = 0
@@ -426,21 +533,24 @@ updateMovieLensLinks(ML_LINKS_FILENAME, db, count)
 link_end = time.perf_counter()
 link_time = link_end-link_start
 
-link_start = time.perf_counter()
-print('Importing TMDB Movie data...')
-importTmdbMovies(TMDB_MOVIES_FILENAME, db, count)
-link_end = time.perf_counter()
-link_time = link_end-link_start
+# This isn't done yet
+# loadTmdbApi(db, count)
 
-cast_start = time.perf_counter()
-print('Importing TMDB Cast data...')
-importCastCrew(TMDB_CREDITS_FILENAME, db)
-cast_end = time.perf_counter()
+# link_start = time.perf_counter()
+# print('Importing TMDB Movie data...')
+# importTmdbMovies(TMDB_MOVIES_FILENAME, db, count)
+# link_end = time.perf_counter()
+# link_time = link_end-link_start
 
-cast_merge_start = time.perf_counter()
-print('Merge cast data to movies...')
-mergeCastMovies(db)
-cast_merge_end = time.perf_counter()
+# cast_start = time.perf_counter()
+# print('Importing TMDB Cast data...')
+# importCastCrew(TMDB_CREDITS_FILENAME, db)
+# cast_end = time.perf_counter()
+
+# cast_merge_start = time.perf_counter()
+# print('Merge cast data to movies...')
+# mergeCastMovies(db)
+# cast_merge_end = time.perf_counter()
 
 
 end = time.perf_counter()
